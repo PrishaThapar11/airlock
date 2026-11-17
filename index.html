@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Airlock: ask AI without leaking your secrets</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔒</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Airlock</h1>
+      <p>Your secrets stay on this device. Only the safe version goes out.</p>
+    </div>
+    <div class="controls">
+      <button id="deviceChip" class="chip" type="button">On-device AI: checking</button>
+      <div class="seg" role="radiogroup" aria-label="Where should the answer come from?">
+        <button type="button" role="radio" data-mode="auto" aria-checked="true">Auto</button>
+        <button type="button" role="radio" data-mode="local" aria-checked="false">This device</button>
+        <button type="button" role="radio" data-mode="cloud" aria-checked="false">Cloud, masked</button>
+      </div>
+      <label class="check"><input type="checkbox" id="reviewToggle" /> Check before sending</label>
+    </div>
+  </header>
+
+  <p id="note" class="note" role="status" aria-live="polite" hidden></p>
+
+  <main class="lock">
+    <section class="zone inside" aria-labelledby="in-h">
+      <h2 id="in-h">Stays on this device</h2>
+      <label for="prompt">Ask anything. Paste the real details.</label>
+      <textarea id="prompt" rows="6" placeholder="Draft an email to my manager Rohit Sharma at Infosys. My PAN is ABCDE1234F..."></textarea>
+      <div class="samples" aria-label="Try an example">
+        <button type="button" data-sample="0">Salary email</button>
+        <button type="button" data-sample="1">Vendor comparison</button>
+        <button type="button" data-sample="2">Broken API call</button>
+      </div>
+      <details class="vault">
+        <summary>Always mask these words</summary>
+        <input id="vaultInput" type="text" aria-label="Words to always mask, separated by commas" placeholder="client names, project codenames, separated by commas" />
+      </details>
+      <button id="send" class="go" type="button">Send through Airlock</button>
+
+      <div id="review" class="card review" hidden>
+        <h3>Check before anything leaves</h3>
+        <p id="reviewWhy" class="legend"></p>
+        <div id="reviewText" class="text"></div>
+        <div id="suggest" class="suggest" hidden>
+          <span>Might be private:</span>
+          <span id="hintList"></span>
+          <button id="hintAll" class="link" type="button">Mask all of these</button>
+        </div>
+        <p class="legend">Click a word to mask it. Click a highlighted word to unmask it.</p>
+        <div class="actions">
+          <button id="reviewGo" class="go" type="button">Send masked version</button>
+          <button id="reviewCancel" class="link" type="button">Cancel, send nothing</button>
+        </div>
+      </div>
+
+      <div id="typed" class="card" hidden>
+        <h3>What you wrote</h3>
+        <p class="legend"><span class="key rule"></span>caught by rules <span class="key ai"></span>caught by on-device AI <span class="key you"></span>marked by you</p>
+        <div id="typedBody" class="text"></div>
+      </div>
+      <div id="answer" class="card answer" hidden>
+        <h3>Answer, with your real details restored</h3>
+        <div id="answerBody" class="text md"></div>
+      </div>
+    </section>
+
+    <div class="door" aria-hidden="true"><span>airlock</span></div>
+
+    <section class="zone outside" aria-labelledby="out-h">
+      <h2 id="out-h">Leaves this device</h2>
+      <div id="outCard" class="card">
+        <h3>What the cloud received</h3>
+        <div id="outBody" class="text muted">Nothing yet. Send a message and watch what crosses the airlock.</div>
+      </div>
+      <dl id="meter" class="meter" hidden>
+        <div><dt>Secrets masked</dt><dd id="mMasked"></dd></div>
+        <div><dt>Bytes sent out</dt><dd id="mBytes"></dd></div>
+        <div><dt>Answered by</dt><dd id="mBy"></dd></div>
+        <div><dt>Why</dt><dd id="mWhy"></dd></div>
+      </dl>
+      <table id="log" class="log" hidden>
+        <caption>Inference log</caption>
+        <thead><tr><th scope="col">Step</th><th scope="col">Mode</th><th scope="col">Ran on</th><th scope="col">Time</th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <section class="report" aria-labelledby="rep-h">
+    <h2 id="rep-h">Your leak report</h2>
+    <p id="repLine"></p>
+    <ul id="badges" class="badges"></ul>
+    <button id="reset" class="link" type="button">Reset report</button>
+  </section>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
