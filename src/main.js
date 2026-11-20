@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const SAMPLES = [
   'Draft a firm but polite email to my manager Rohit Sharma at Infosys. My PAN is ABCDE1234F and my salary is 28 LPA. Ask about the Project Nandini bonus.',
   'Compare these two vendor quotes for our Bhopal warehouse and tell me which to pick, with a step by step risk analysis. Vendor A is Kavya Logistics, contact Priya Nair at priya.k@kavyalog.in or 98765 43210, quote 18 lakh. Vendor B is Orbit Freight, quote 21 lakh, UPI orbit@okhdfcbank. Consider delivery time, penalties, insurance, and what happens if either vendor fails during the festive season.',
-  'Why does this fail with a 403? const key = "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"; fetch(url + key). My Aadhaar for the test account is 2345 6789 0123.',
+  'Why does this fail with a 403? const key = "AIza' + 'SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"; fetch(url + key). My Aadhaar for the test account is 2345 6789 0123.',
 ];
 
 let mode = 'auto';
@@ -107,6 +107,36 @@ function renderMarkdown(el, text, map) {
   }
 }
 
+// ---------- door lamp and token transit ----------
+function setDoor(state, text) { $('door').dataset.state = state; $('doorText').textContent = text; }
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Each highlighted word on the left slides across the door and lands as a token on the right.
+function flyTokens() {
+  if (reduceMotion) return;
+  const from = [...$('typedBody').querySelectorAll('mark')];
+  const to = [...$('outBody').querySelectorAll('mark.token')];
+  const n = Math.min(from.length, to.length, 10);
+  to.forEach((el, i) => { if (i < n) el.style.visibility = 'hidden'; });
+  for (let i = 0; i < n; i++) {
+    const a = from[i].getBoundingClientRect();
+    const b = to[i].getBoundingClientRect();
+    const f = document.createElement('div');
+    f.className = 'fly';
+    f.textContent = from[i].textContent;
+    f.style.left = `${a.left}px`;
+    f.style.top = `${a.top}px`;
+    document.body.append(f);
+    const dx = b.left - a.left, dy = b.top - a.top;
+    const anim = f.animate([
+      { transform: 'translate(0, 0)' },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 22}px)` },
+      { transform: `translate(${dx}px, ${dy}px)` },
+    ], { duration: 800, delay: i * 80, easing: 'cubic-bezier(.5, 0, .2, 1)', fill: 'both' });
+    setTimeout(() => { f.textContent = to[i].textContent; f.classList.add('masked'); }, i * 80 + 380);
+    anim.finished.then(() => { to[i].style.visibility = ''; f.remove(); }).catch(() => { to[i].style.visibility = ''; f.remove(); });
+  }
+}
+
 // ---------- inference log ----------
 let log = [];
 function addLog(step, how, where, t0) {
@@ -188,7 +218,7 @@ function review(raw, base, why) {
       const hints = suggest(raw, ents);
       $('suggest').hidden = !hints.length;
       confirming = false;
-$('reviewGo').textContent = hints.length ? `Send masked version (${hints.length} unchecked)` : 'Send masked version';
+      $('reviewGo').textContent = hints.length ? `Send masked version (${hints.length} unchecked)` : 'Send masked version';
       $('hintList').replaceChildren(...hints.map((h) => {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'hint'; b.textContent = h; b.onclick = () => add(h);
@@ -198,14 +228,14 @@ $('reviewGo').textContent = hints.length ? `Send masked version (${hints.length}
     };
     const close = (value) => { $('review').hidden = true; resolve(value); };
     $('reviewGo').onclick = () => {
-  const left = suggest(raw, ents).length;
-  if (left && !confirming) {
-    confirming = true;
-    $('reviewGo').textContent = `Yes, send with ${left} word${left > 1 ? 's' : ''} unmasked`;
-    return;
-  }
-  close(ents);
-};
+      const left = suggest(raw, ents).length;
+      if (left && !confirming) {
+        confirming = true;
+        $('reviewGo').textContent = `Yes, send with ${left} word${left > 1 ? 's' : ''} unmasked`;
+        return;
+      }
+      close(ents);
+    };
     $('reviewCancel').onclick = () => close(null);
     draw();
     $('review').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -257,6 +287,7 @@ async function run() {
   if (!raw || busy) return;
   busy = true; $('send').disabled = true; note(''); log = []; $('log').hidden = true;
   $('answer').hidden = true; $('review').hidden = true;
+  setDoor('scan', 'Scanning');
   try {
     if (!deviceReady) await wake(); // needs the click gesture, so it comes first
 
@@ -280,10 +311,12 @@ async function run() {
     // Nothing leaves unreviewed when the on-device model could not read the text, or when asked.
     if (route.where === 'cloud' && (!deviceReady || $('reviewToggle').checked)) {
       $('send').textContent = 'Waiting for your review';
+      setDoor('hold', 'Hold: review needed');
       const approved = await review(raw, found, deviceReady
         ? 'You asked to check before anything is sent.'
         : 'The on-device model is not available here, so Airlock only catches patterns like PAN or phone numbers. Click any word it missed.');
-      if (!approved) { note('Cancelled. Nothing was sent.'); return; }
+      if (!approved) { note('Cancelled. Nothing was sent.'); setDoor('idle', 'Standby'); return; }
+      setDoor('scan', 'Scanning');
       found = approved; map = buildMap(found); route = chooseRoute(mask(raw, map), words);
     }
     const masked = mask(raw, map);
@@ -297,6 +330,7 @@ async function run() {
     let text = null, by = '', bytes = 0, usedLocal = false;
 
     $('send').textContent = route.where === 'local' ? 'Answering on your device' : 'Asking the cloud';
+    if (route.where === 'cloud') { setDoor('transit', 'In transit, masked'); flyTokens(); }
     if (route.where === 'local') {
       try {
         t = performance.now();
@@ -310,10 +344,10 @@ async function run() {
     }
     if (!usedLocal) {
       const tokens = [...map.values()].map((e) => e.token);
-const hint = tokens.length
-  ? `These tokens stand for private details: ${tokens.join(', ')}. Keep them exactly as written, in square brackets. Never invent other tokens.`
-  : '';
-const payload = `Answer helpfully and concisely. ${hint}\n\n${masked}`;
+      const hint = tokens.length
+        ? `These tokens stand for private details: ${tokens.join(', ')}. Keep them exactly as written, in square brackets. Never invent other tokens.`
+        : '';
+      const payload = `Answer helpfully and concisely. ${hint}\n\n${masked}`;
       bytes = new TextEncoder().encode(payload).length;
       t = performance.now();
       const r = await ask(cloudModel, payload, (s) => showAnswer(unmask(hideTail(s), map)));
@@ -332,11 +366,15 @@ const payload = `Answer helpfully and concisely. ${hint}\n\n${masked}`;
 
     showAnswer(text);
     const vals = [...map.values()];
-    $('mMasked').textContent = `${map.size} (${vals.filter((e) => e.src === 'rule' || e.src === 'vault').length} by rules, ${vals.filter((e) => e.src === 'ai').length} by on-device AI, ${vals.filter((e) => e.src === 'you').length} by you)`;
-    $('mBytes').textContent = `${bytes}`;
+    $('mMasked').textContent = map.size;
+    $('mSplit').textContent = `${vals.filter((e) => e.src === 'rule' || e.src === 'vault').length} by rules, ${vals.filter((e) => e.src === 'ai').length} by on-device AI, ${vals.filter((e) => e.src === 'you').length} by you`;
+    $('mBytes').textContent = bytes;
+    $('mBytesCard').dataset.tone = bytes === 0 ? 'safe' : 'out';
     $('mBy').textContent = by;
     $('mWhy').textContent = route.why;
     $('meter').hidden = false;
+    if (bytes === 0) setDoor('sealed', 'Sealed: 0 bytes out');
+    else setDoor('out', `Masked out: ${bytes} bytes`);
 
     stats.runs++; stats.secrets += map.size;
     stats.chars += [...map.keys()].reduce((n, k) => n + k.length, 0);
@@ -345,12 +383,13 @@ const payload = `Answer helpfully and concisely. ${hint}\n\n${masked}`;
     saveStats(stats); renderReport();
   } catch (err) {
     console.error(err);
-        const msg = String(err.message || err);
+    const msg = String(err.message || err);
     note(/429|quota|RESOURCE_EXHAUSTED/i.test(msg)
       ? 'The shared cloud quota for this demo is used up for now. Try "This device" mode, or come back in a few minutes.'
       : /App Check|401|403/i.test(msg)
         ? 'The cloud did not accept this browser (App Check). Your private details were not sent. Try again, or use "This device" mode if your browser supports it.'
         : `Something went wrong: ${msg}`);
+    setDoor('fault', 'Stopped');
   } finally {
     busy = false; $('send').disabled = false; $('send').textContent = 'Send through Airlock';
   }

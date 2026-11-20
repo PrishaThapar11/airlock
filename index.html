@@ -4,17 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Airlock: ask AI without leaking your secrets</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔒</text></svg>" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='3' y='3' width='34' height='34' rx='6' fill='%2316181b'/%3E%3Crect x='9' y='9' width='10' height='22' rx='2' fill='%23ffc800'/%3E%3Crect x='21' y='9' width='10' height='22' rx='2' fill='%23ffc800'/%3E%3Ccircle cx='20' cy='20' r='3' fill='%2316181b'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
   <header class="top">
     <div class="brand">
-      <h1>Airlock</h1>
-      <p>Your secrets stay on this device. Only the safe version goes out.</p>
+      <svg class="logo" viewBox="0 0 40 40" width="52" height="52" aria-hidden="true">
+        <rect x="3" y="3" width="34" height="34" rx="9" fill="#1d2023" />
+        <rect x="9" y="9" width="10" height="22" rx="3" fill="#ffc800" />
+        <rect x="21" y="9" width="10" height="22" rx="3" fill="#ffc800" />
+        <circle cx="20" cy="20" r="3" fill="#1d2023" />
+      </svg>
+      <div>
+        <h1>Airlock</h1>
+        <p>Your secrets stay on this device. Only the safe version goes out.</p>
+      </div>
     </div>
     <div class="controls">
       <button id="deviceChip" class="chip" type="button">On-device AI: checking</button>
@@ -31,7 +39,7 @@
 
   <main class="lock">
     <section class="zone inside" aria-labelledby="in-h">
-      <h2 id="in-h">Stays on this device</h2>
+      <h2 id="in-h"><span class="tag">Zone A</span> Stays on this device</h2>
       <label for="prompt">Ask anything. Paste the real details.</label>
       <textarea id="prompt" rows="6" placeholder="Draft an email to my manager Rohit Sharma at Infosys. My PAN is ABCDE1234F..."></textarea>
       <div class="samples" aria-label="Try an example">
@@ -46,7 +54,7 @@
       <button id="send" class="go" type="button">Send through Airlock</button>
 
       <div id="review" class="card review" hidden>
-        <h3>Check before anything leaves</h3>
+        <h3>Hold. Check before anything leaves</h3>
         <p id="reviewWhy" class="legend"></p>
         <div id="reviewText" class="text"></div>
         <div id="suggest" class="suggest" hidden>
@@ -72,20 +80,25 @@
       </div>
     </section>
 
-    <div class="door" aria-hidden="true"><span>airlock</span></div>
+    <div id="door" class="door" data-state="idle" role="status" aria-live="polite">
+      <div class="door-inner">
+        <span class="lamp" aria-hidden="true"></span>
+        <span id="doorText" class="door-text">Standby</span>
+      </div>
+    </div>
 
     <section class="zone outside" aria-labelledby="out-h">
-      <h2 id="out-h">Leaves this device</h2>
+      <h2 id="out-h"><span class="tag">Zone B</span> Leaves this device</h2>
       <div id="outCard" class="card">
         <h3>What the cloud received</h3>
         <div id="outBody" class="text muted">Nothing yet. Send a message and watch what crosses the airlock.</div>
       </div>
-      <dl id="meter" class="meter" hidden>
-        <div><dt>Secrets masked</dt><dd id="mMasked"></dd></div>
-        <div><dt>Bytes sent out</dt><dd id="mBytes"></dd></div>
-        <div><dt>Answered by</dt><dd id="mBy"></dd></div>
-        <div><dt>Why</dt><dd id="mWhy"></dd></div>
-      </dl>
+      <div id="meter" class="panel" hidden>
+        <div class="gauge"><span class="lbl">Masked</span><b id="mMasked"></b><small id="mSplit"></small></div>
+        <div id="mBytesCard" class="gauge" data-tone="safe"><span class="lbl">Bytes out</span><b id="mBytes"></b></div>
+        <div class="gauge wide"><span class="lbl">Answered by</span><b id="mBy"></b></div>
+        <p id="mWhy" class="why"></p>
+      </div>
       <table id="log" class="log" hidden>
         <caption>Inference log</caption>
         <thead><tr><th scope="col">Step</th><th scope="col">Mode</th><th scope="col">Ran on</th><th scope="col">Time</th></tr></thead>
