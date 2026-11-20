@@ -1,5 +1,5 @@
-import { detector, localModel, cloudModel, ENTITY_TYPES, deviceStatus, wakeDevice, fromDevice } from './firebase.js';
-import { detectRules, mergeEntities, buildMap, splitParts, mask, unmask, suggest } from './shield.js';
+import { detector, localModel, cloudModel, ENTITY_TYPES, deviceStatus, wakeDevice, fromDevice, loadConfig } from './firebase.js';
+import { detectRules, mergeEntities, expandAliases, buildMap, splitParts, mask, unmask, suggest } from './shield.js';
 
 const $ = (id) => document.getElementById(id);
 const SAMPLES = [
@@ -11,6 +11,8 @@ const SAMPLES = [
 let mode = 'auto';
 let deviceReady = false;
 let busy = false;
+let cfg = { routerWords: 60, cloudEnabled: true }; // overwritten from Remote Config
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---------- leak report ----------
@@ -29,7 +31,7 @@ const BADGES = [
 ];
 function renderReport() {
   $('repLine').textContent = stats.runs
-    ? `${stats.secrets} secrets masked across ${stats.runs} messages. ${stats.chars} characters of private text never left this device. ${stats.local} answered fully on-device, ${stats.cloud} sent masked to the cloud.`
+    ? `${plural(stats.secrets, 'secret', 'secrets')} masked across ${plural(stats.runs, 'message', 'messages')}. ${plural(stats.chars, 'character', 'characters')} of private text never left this device. ${stats.local} answered fully on-device, ${stats.cloud} sent masked to the cloud.`
     : 'Send a message to start your report. It is stored only in this browser.';
   $('badges').replaceChildren(...BADGES.map((b) => {
     const li = document.createElement('li');
@@ -243,28 +245,53 @@ function review(raw, base, why) {
 }
 
 // ---------- pipeline ----------
-async function deepDetect(raw) {
-  const prompt = `You protect privacy. List only real-world identifiers in the text below: actual people's names, real company names, specific places or addresses, salary or price figures, and confidential project or client names. Do NOT list labels like "Vendor A", generic roles, seasons, dates or common words. Copy each one EXACTLY as written. Answer as JSON.\n\nTEXT:\n"""\n${raw}\n"""`;
+// Long text is read in chunks so one big paste does not overflow the small on-device model.
+function chunkText(text, size = 1800, max = 8) {
+  const out = [];
+  let cur = '';
+  for (const part of text.split(/(?<=[.!?\n])\s+/)) {
+    if (cur && cur.length + part.length + 1 > size) { out.push(cur); cur = part; }
+    else cur = cur ? `${cur} ${part}` : part;
+  }
+  if (cur) out.push(cur);
+  return { list: out.slice(0, max), cut: out.length > max };
+}
+const GENERIC = /^(vendor|supplier|client|customer|company|team|manager|option|quote)\s*[a-z0-9]?$/i;
+const SEASON = /^(the\s+)?(festive|holiday|summer|winter|monsoon)\s+(season|period)$/i;
+async function detectChunk(chunk, full) {
+  const prompt = `You protect privacy. List only real-world identifiers in the text below: actual people's names, real company names, specific places or addresses, salary or price figures, and confidential project or client names. Do NOT list labels like "Vendor A", generic roles, seasons, dates or common words. Copy each one EXACTLY as written. Answer as JSON.\n\nTEXT:\n"""\n${chunk}\n"""`;
   const res = await detector.generateContent(prompt);
   if (!fromDevice(res)) throw new Error('detector ran off-device');
   const list = JSON.parse(res.response.text()).entities || [];
-  const GENERIC = /^(vendor|supplier|client|customer|company|team|manager|option|quote)\s*[a-z0-9]?$/i;
-  const SEASON = /^(the\s+)?(festive|holiday|summer|winter|monsoon)\s+(season|period)$/i;
   return list.filter((e) => ENTITY_TYPES.includes(e.type) && typeof e.text === 'string'
-    && e.text.trim().length > 2 && raw.includes(e.text)
+    && e.text.trim().length > 2 && full.includes(e.text)
     && !GENERIC.test(e.text.trim()) && !SEASON.test(e.text.trim()));
+}
+// complete is false when the text was too long to read in full.
+async function deepDetect(raw) {
+  const { list, cut } = chunkText(raw);
+  const hits = [];
+  for (const c of list) {
+    for (const e of await detectChunk(c, raw)) if (!hits.some((h) => h.text === e.text)) hits.push(e);
+  }
+  return { hits, complete: !cut };
 }
 
 function chooseRoute(masked, words) {
-  if (mode === 'cloud') return { where: 'cloud', why: 'You chose cloud. Only the masked text is sent.' };
+  const viaCloud = (why) => cfg.cloudEnabled
+    ? { where: 'cloud', why }
+    : deviceReady
+      ? { where: 'local', why: 'Cloud is switched off in Remote Config, so this stayed on your device.' }
+      : { where: 'blocked', why: 'Cloud is switched off in Remote Config and this browser has no on-device AI, so nothing can answer right now.' };
+  if (mode === 'cloud') return viaCloud('You chose cloud. Only the masked text is sent.');
   if (mode === 'local') return deviceReady
     ? { where: 'local', why: 'You chose this device. Nothing is sent.' }
-    : { where: 'cloud', why: 'On-device AI is unavailable, so the masked text went to the cloud.' };
-  const hard = words > 60 || /\b(compare|analy[sz]e|step by step|strategy|debug|essay|detailed)\b/i.test(masked);
-  if (hard) return { where: 'cloud', why: `Auto: ${words} words, needs deeper reasoning. Cloud gets masked text only.` };
+    : viaCloud('On-device AI is unavailable, so the masked text went to the cloud.');
+  if (words > cfg.routerWords) return viaCloud(`Auto: ${words} words, over the ${cfg.routerWords}-word limit. Cloud gets masked text only.`);
+  if (/\b(compare|analy[sz]e|step by step|strategy|debug|essay|detailed)\b/i.test(masked)) return viaCloud('Auto: this looks like a harder task. Cloud gets masked text only.');
   return deviceReady
     ? { where: 'local', why: 'Auto: short, simple prompt. Free and private, so it stays here.' }
-    : { where: 'cloud', why: 'Auto: on-device AI unavailable, so masked text went to the cloud.' };
+    : viaCloud('Auto: on-device AI unavailable, so masked text went to the cloud.');
 }
 
 // Streams if it can, falls back to one-shot if the model or mode does not support streaming.
@@ -296,25 +323,42 @@ async function run() {
     addLog('Pattern rules', 'local code', 'This device', t);
 
     let aiHits = [];
+    let scanned = false; // true only if the on-device model read all of the text
     if (deviceReady) {
       $('send').textContent = 'Reading on your device';
       t = performance.now();
-      try { aiHits = await deepDetect(raw); addLog('Find names, companies, amounts', 'ONLY_ON_DEVICE', 'This device', t); }
-      catch (err) { console.warn(err); deviceReady = false; setChip('On-device AI: not on this device', 'bad'); }
+      try {
+        const r = await deepDetect(raw);
+        aiHits = r.hits; scanned = r.complete;
+        addLog('Find names, companies, amounts', 'ONLY_ON_DEVICE', 'This device', t);
+      } catch (err) { console.warn('on-device detection failed for this message', err); }
     }
 
-    let found = mergeEntities(rules, aiHits);
+    let found = expandAliases(raw, mergeEntities(rules, aiHits));
+    if ($('keepMoney').checked) found = found.filter((e) => e.type !== 'MONEY');
     let map = buildMap(found);
     const words = raw.split(/\s+/).length;
     let route = chooseRoute(mask(raw, map), words);
 
     // Nothing leaves unreviewed when the on-device model could not read the text, or when asked.
-    if (route.where === 'cloud' && (!deviceReady || $('reviewToggle').checked)) {
+    if (route.where === 'blocked') { note(route.why); setDoor('fault', 'Cloud paused'); return; }
+
+    if (route.where === 'cloud' && (!scanned || $('reviewToggle').checked)) {
       $('send').textContent = 'Waiting for your review';
       setDoor('hold', 'Hold: review needed');
-      const approved = await review(raw, found, deviceReady
-        ? 'You asked to check before anything is sent.'
-        : 'The on-device model is not available here, so Airlock only catches patterns like PAN or phone numbers. Click any word it missed.');
+      let start = found;
+      let why = 'You asked to check before anything is sent.';
+      if (!scanned) {
+        // No reliable name detection, so pre-select likely names and amounts for the person to confirm.
+        const guess = suggest(raw, found)
+          .filter((g) => !($('keepMoney').checked && /LPA|lakh|crore|₹|Rs/i.test(g)))
+          .map((g) => ({ text: g, type: 'OTHER', src: 'you' }));
+        start = [...found, ...guess];
+        why = deviceReady
+          ? 'The on-device model could not read all of this text. Airlock pre-selected likely names and amounts. Fix anything wrong, then send.'
+          : 'The on-device model is not available in this browser, so Airlock matched patterns (PAN, phone, email) and guessed at names and amounts. Fix anything wrong, then send.';
+      }
+      const approved = await review(raw, start, why);
       if (!approved) { note('Cancelled. Nothing was sent.'); setDoor('idle', 'Standby'); return; }
       setDoor('scan', 'Scanning');
       found = approved; map = buildMap(found); route = chooseRoute(mask(raw, map), words);
@@ -412,5 +456,17 @@ $('vaultInput').addEventListener('input', () => {
 $('reset').addEventListener('click', () => { stats = blank(); saveStats(stats); renderReport(); });
 window.addEventListener('online', refreshDevice);
 
+// Load the model into memory in the background so the first message is not slow.
+async function warmUp() {
+  if (!deviceReady) return;
+  try {
+    setChip('On-device AI: warming up', 'warn');
+    await detector.initializeDeviceModel();
+    await detector.generateContent('Reply with {"entities":[]}.');
+  } catch (err) { console.warn('warm-up skipped', err); }
+  setChip('On-device AI: ready', 'ok');
+}
+
 renderReport();
-refreshDevice();
+refreshDevice().then(warmUp);
+loadConfig().then((c) => { cfg = c; });

@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from 'firebase/ai';
+import { getRemoteConfig, fetchAndActivate, getValue } from 'firebase/remote-config';
 
 const env = import.meta.env;
 const app = initializeApp({
@@ -82,3 +83,23 @@ export async function wakeDevice(onProgress) {
 }
 
 export const fromDevice = (res) => String(res.response.inferenceSource || '').toLowerCase().includes('device');
+
+// Remote Config: tune the router and flip a cloud kill switch without redeploying.
+// Parameters (both optional, defaults are used if they are not set in the console):
+//   router_word_limit (number)  cloud_enabled (boolean)
+export async function loadConfig() {
+  const defaults = { routerWords: 60, cloudEnabled: true };
+  try {
+    const rc = getRemoteConfig(app);
+    rc.settings.minimumFetchIntervalMillis = env.DEV ? 0 : 3600000;
+    rc.defaultConfig = { router_word_limit: defaults.routerWords, cloud_enabled: defaults.cloudEnabled };
+    await fetchAndActivate(rc);
+    return {
+      routerWords: getValue(rc, 'router_word_limit').asNumber() || defaults.routerWords,
+      cloudEnabled: getValue(rc, 'cloud_enabled').asBoolean(),
+    };
+  } catch (err) {
+    console.warn('Remote Config unavailable, using defaults', err);
+    return defaults;
+  }
+}

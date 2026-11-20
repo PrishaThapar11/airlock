@@ -21,7 +21,7 @@
       </svg>
       <div>
         <h1>Airlock</h1>
-        <p>Your secrets stay on this device. Only the safe version goes out.</p>
+        <p>Ask AI about real things. Only a masked copy leaves your device.</p>
       </div>
     </div>
     <div class="controls">
@@ -51,6 +51,7 @@
         <summary>Always mask these words</summary>
         <input id="vaultInput" type="text" aria-label="Words to always mask, separated by commas" placeholder="client names, project codenames, separated by commas" />
       </details>
+      <label class="check money"><input type="checkbox" id="keepMoney" /> Let money amounts through (better comparisons)</label>
       <button id="send" class="go" type="button">Send through Airlock</button>
 
       <div id="review" class="card review" hidden>
@@ -91,7 +92,7 @@
       <h2 id="out-h"><span class="tag">Zone B</span> Leaves this device</h2>
       <div id="outCard" class="card">
         <h3>What the cloud received</h3>
-        <div id="outBody" class="text muted">Nothing yet. Send a message and watch what crosses the airlock.</div>
+        <div id="outBody" class="text muted">Nothing sent yet. Whatever reaches the cloud will show up here, exactly as sent.</div>
       </div>
       <div id="meter" class="panel" hidden>
         <div class="gauge"><span class="lbl">Masked</span><b id="mMasked"></b><small id="mSplit"></small></div>
@@ -113,6 +114,8 @@
     <ul id="badges" class="badges"></ul>
     <button id="reset" class="link" type="button">Reset report</button>
   </section>
+
+  <footer class="foot">Built for #BuildHybridAI 2026. <a href="https://github.com/PrishaThapar11/airlock">Source on GitHub</a></footer>
 
   <script type="module" src="/src/main.js"></script>
 </body>

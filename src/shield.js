@@ -14,10 +14,10 @@ const luhn = (digits) => {
 // Order = priority. Earlier rules win when matches overlap.
 const RULES = [
   { type: 'CARD', re: /\b(?:\d[ -]?){13,19}\b/g, ok: (s) => luhn(s.replace(/\D/g, '')) },
-  { type: 'AADHAAR', re: /\b[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}\b/g },
+  { type: 'AADHAAR', re: /(?<!\d)[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}(?![ -]?\d)/g },
   { type: 'PAN', re: /\b[A-Z]{5}\d{4}[A-Z]\b/g },
   { type: 'EMAIL', re: /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g },
-  { type: 'UPI', re: /\b[\w.-]{2,}@(?!\w+\.)[a-z]{2,}\b/gi },
+  { type: 'UPI', re: /\b[\w.-]{2,}@(?!\w+\.\w)[a-z]{2,}\b/gi },
   { type: 'PHONE', re: /(?:\+91[ -]?)?\b[6-9]\d{4}[ -]?\d{5}\b/g },
   { type: 'IFSC', re: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g },
   { type: 'SECRET', re: /\b(?:AIza[\w-]{35}|sk-[\w-]{20,}|ghp_\w{36}|AKIA[0-9A-Z]{16})\b/g },
@@ -42,7 +42,7 @@ export function detectRules(text) {
 export function mergeEntities(rules, ai) {
   const all = [...rules];
   for (const e of ai) {
-    if (all.some((r) => r.text.includes(e.text) || e.text.includes(r.text))) continue;
+    if (all.some((r) => r.src !== 'ai' && (r.text.includes(e.text) || e.text.includes(r.text)))) continue;
     if (all.some((r) => r.text === e.text)) continue;
     all.push({ ...e, src: 'ai' });
   }
@@ -104,4 +104,18 @@ export function suggest(raw, ents) {
   }
   for (const m of raw.matchAll(AMOUNT)) add(m[0].trim());
   return out.slice(0, 14);
+}
+
+// If the model found "Rohit Sharma" but the text also says just "Rohit", mask that too.
+export function expandAliases(raw, ents) {
+  const out = [...ents];
+  for (const e of ents) {
+    if (e.type !== 'PERSON' || !e.text.includes(' ')) continue;
+    const rest = raw.split(e.text).join(' ');
+    for (const w of e.text.split(/\s+/)) {
+      if (w.length < 3 || out.some((x) => x.text === w)) continue;
+      if (new RegExp(`(?<![\\p{L}\\p{N}])${esc(w)}(?![\\p{L}\\p{N}])`, 'u').test(rest)) out.push({ text: w, type: 'PERSON', src: e.src });
+    }
+  }
+  return out;
 }
